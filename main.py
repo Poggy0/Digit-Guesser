@@ -69,7 +69,7 @@ def test_run(X_test, y_test, weights1, biases1, weightsOut, biasesOut):
     accuracy = correct / len(X_test)
     return accuracy
 
-epochs = 25
+epochs = 5
 
 weights1 = np.random.randn(784, 128) * 0.01
 biases1 = np.zeros(128)
