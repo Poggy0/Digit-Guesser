@@ -30,6 +30,8 @@ def init_interface():
     style.configure("Title.TLabel", background=BACKGROUND, foreground=FOREGROUND, font=("TkDefaultFont", 22, "bold"))
     style.configure("Accent.TButton", background=ACCENT, foreground="white", padding=(14, 9))
     style.map("Accent.TButton", background=[("active", "#4338CA"), ("disabled", "#A5B4FC")])
+    style.configure("Cancel.TButton", background="#DC2626", foreground="white", padding=(14, 9))
+    style.map("Cancel.TButton", background=[("active", "#B91C1C"), ("disabled", "#FCA5A5")])
 
     return root
 
@@ -195,16 +197,26 @@ def init_buttons(root, model):
     chart.bind("<Configure>", draw_chart)
     draw_chart()
 
-    controls = (
-        epochs_input, training_input, testing_input, batch_size_input,
-        train_button, test_button,
-    )
+    controls = (epochs_input, training_input, testing_input, batch_size_input, test_button)
+    training_cancel_event = None
 
-    # Disable user controls while background work is running.
-    def set_busy(busy):
+    # Lock settings during work and show the appropriate training action.
+    def set_busy(busy, training=False):
         state = "disabled" if busy else "normal"
         for control in controls:
             control.configure(state=state)
+        if training and busy:
+            train_button.configure(
+                text="Cancel training",
+                style="Cancel.TButton",
+                state="normal",
+            )
+        else:
+            train_button.configure(
+                text="Start training",
+                style="Accent.TButton",
+                state=state,
+            )
 
     # Parse image counts and ensure each stays within its own MNIST pool.
     def selected_image_counts():
@@ -235,8 +247,8 @@ def init_buttons(root, model):
         return epochs, training_count, testing_count, batch_size
 
     # Run long operations away from the UI thread and report any failures.
-    def start_worker(work, action_name):
-        set_busy(True)
+    def start_worker(work, action_name, training=False):
+        set_busy(True, training=training)
 
         def run():
             try:
@@ -248,13 +260,19 @@ def init_buttons(root, model):
                     lambda message=str(error): status_var.set(f"{action_name} failed: {message}"),
                 )
             finally:
-                root.after(0, lambda: set_busy(False))
+                def finish():
+                    nonlocal training_cancel_event
+                    if training:
+                        training_cancel_event = None
+                    set_busy(False)
+
+                root.after(0, finish)
 
         threading.Thread(target=run, daemon=True).start()
 
     # Validate the settings, reset chart state, and start model training.
     def run_training():
-        nonlocal chart_epoch_count
+        nonlocal chart_epoch_count, training_cancel_event
 
         try:
             epochs, training_count, testing_count, batch_size = selected_counts()
@@ -266,6 +284,7 @@ def init_buttons(root, model):
         accuracy_history.clear()
         accuracy_var.set("—")
         loss_var.set("—")
+        training_cancel_event = threading.Event()
         draw_chart()
         status_var.set("Training in progress...")
 
@@ -293,9 +312,21 @@ def init_buttons(root, model):
                 testing_size=testing_count,
                 metrics_update=on_metrics_update,
                 batch_size=batch_size,
+                cancel_event=training_cancel_event,
             ),
             "Training",
+            training=True,
         )
+
+    # Signal the current batch to finish, then stop before the next batch.
+    def handle_training_button():
+        nonlocal training_cancel_event
+        if training_cancel_event is None:
+            run_training()
+            return
+        training_cancel_event.set()
+        train_button.configure(text="Cancelling...", state="disabled")
+        status_var.set("Cancelling training after the current batch...")
 
     # Evaluate the model on the selected number of held-out test images.
     def run_test():
@@ -313,6 +344,6 @@ def init_buttons(root, model):
 
         start_worker(work, "Testing")
 
-    train_button.configure(command=run_training)
+    train_button.configure(command=handle_training_button)
     test_button.configure(command=run_test)
     return container

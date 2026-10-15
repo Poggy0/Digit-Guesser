@@ -71,7 +71,16 @@ class Model:
         self.biasesOut = np.zeros(10)
 
     # Train on the requested training subset and optionally report test metrics.
-    def train(self, epochs, status_update, training_size=None, testing_size=None, metrics_update=None, batch_size=32):
+    def train(
+        self,
+        epochs,
+        status_update,
+        training_size=None,
+        testing_size=None,
+        metrics_update=None,
+        batch_size=32,
+        cancel_event=None,
+    ):
         training_size = len(self.X_train) if training_size is None else training_size
         testing_size = len(self.X_test) if testing_size is None else testing_size
         if not 1 <= training_size <= len(self.X_train):
@@ -89,6 +98,10 @@ class Model:
             # Shuffle the selected training images so batches vary in order each epoch.
             shuffled_indices = np.random.permutation(training_size)
             for start_index in range(0, training_size, batch_size):
+                if cancel_event is not None and cancel_event.is_set():
+                    status_update("Training cancelled")
+                    return
+
                 batch_indices = shuffled_indices[start_index:start_index + batch_size]
                 input_images = self.X_train[batch_indices]
                 true_labels = self.y_train[batch_indices].astype(int)
@@ -104,6 +117,11 @@ class Model:
                     input_images, true_labels, output_nodes, hidden_nodes,
                     self.weights1, self.biases1, self.weightsOut, self.biasesOut
                 )
+
+                # Stop cleanly after the current batch has finished updating.
+                if cancel_event is not None and cancel_event.is_set():
+                    status_update("Training cancelled")
+                    return
 
             # Send epoch metrics back to the interface when callbacks are provided.
             avg_loss = total_loss / training_size

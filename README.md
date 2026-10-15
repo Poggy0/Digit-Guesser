@@ -21,7 +21,8 @@ weight update, and the final batch may be smaller if the training count is not
 divisible by the batch size.
 During training, the interface reports the average training loss and plots
 held-out test accuracy after each epoch. The test button evaluates the current
-model using the selected number of test images.
+model using the selected number of test images. When cancelling the training, cancellation takes effect after the current
+mini-batch finishes.
 
 ## Results
 
