@@ -57,12 +57,13 @@ def init_buttons(root, model):
 
     settings = ttk.LabelFrame(container, text="Training setup", padding=16)
     settings.grid(row=2, column=0, sticky="ew")
-    for column in range(3):
+    for column in range(4):
         settings.columnconfigure(column, weight=1)
 
     epochs_var = tk.StringVar(value="5")
     training_var = tk.StringVar(value=str(training_total))
     testing_var = tk.StringVar(value=str(testing_total))
+    batch_size_var = tk.StringVar(value="32")
     dataset_summary = tk.StringVar()
 
     # Add one labeled numeric input to the settings row.
@@ -79,6 +80,7 @@ def init_buttons(root, model):
     epochs_input = add_spinbox(settings, "Epochs", epochs_var, 1000, 0)
     training_input = add_spinbox(settings, "Training images", training_var, training_total, 1)
     testing_input = add_spinbox(settings, "Testing images", testing_var, testing_total, 2)
+    batch_size_input = add_spinbox(settings, "Batch size", batch_size_var, training_total, 3)
 
     # Keep the available and selected dataset counts visible as inputs change.
     def refresh_dataset_summary(*_):
@@ -193,7 +195,10 @@ def init_buttons(root, model):
     chart.bind("<Configure>", draw_chart)
     draw_chart()
 
-    controls = (epochs_input, training_input, testing_input, train_button, test_button)
+    controls = (
+        epochs_input, training_input, testing_input, batch_size_input,
+        train_button, test_button,
+    )
 
     # Disable user controls while background work is running.
     def set_busy(busy):
@@ -219,12 +224,15 @@ def init_buttons(root, model):
     def selected_counts():
         try:
             epochs = int(epochs_var.get())
+            batch_size = int(batch_size_var.get())
         except ValueError as error:
-            raise ValueError("Enter a whole number for epochs.") from error
+            raise ValueError("Enter whole numbers for epochs and batch size.") from error
         if not 1 <= epochs <= 1000:
             raise ValueError("Epochs must be between 1 and 1,000.")
+        if not 1 <= batch_size <= training_total:
+            raise ValueError(f"Batch size must be between 1 and {training_total:,}.")
         training_count, testing_count = selected_image_counts()
-        return epochs, training_count, testing_count
+        return epochs, training_count, testing_count, batch_size
 
     # Run long operations away from the UI thread and report any failures.
     def start_worker(work, action_name):
@@ -249,7 +257,7 @@ def init_buttons(root, model):
         nonlocal chart_epoch_count
 
         try:
-            epochs, training_count, testing_count = selected_counts()
+            epochs, training_count, testing_count, batch_size = selected_counts()
         except ValueError as error:
             status_var.set(str(error))
             return
@@ -284,6 +292,7 @@ def init_buttons(root, model):
                 training_size=training_count,
                 testing_size=testing_count,
                 metrics_update=on_metrics_update,
+                batch_size=batch_size,
             ),
             "Training",
         )

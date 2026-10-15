@@ -13,32 +13,34 @@ def sigmoid(x):
 
 # Turn output scores into probabilities that add up to one.
 def softmax(x):
-    exp_values = np.exp(x - np.max(x))
-    return exp_values / np.sum(exp_values)
+    exp_values = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return exp_values / np.sum(exp_values, axis=-1, keepdims=True)
 
 
-# Measure the penalty for assigning a low probability to the correct digit.
-def cross_entropy_loss(predicted, true_label):
+# Measure the average penalty for assigning low probabilities to correct digits.
+def cross_entropy_loss(predicted, true_labels):
     predicted_clipped = np.clip(predicted, 1e-12, 1 - 1e-12)
-    return -np.log(predicted_clipped[true_label])
+    batch_indices = np.arange(len(true_labels))
+    return np.mean(-np.log(predicted_clipped[batch_indices, true_labels]))
 
 
-# Calculate gradients and update both layers' weights and biases for one image.
-def back_prop(input, true_label, output_nodes, hidden_nodes, weights1, biases1, weights_out, biases_out, learning_rate=0.1):
-    one_hot = np.zeros(10)
-    one_hot[true_label] = 1
+# Average a batch's gradients and apply one update to the network parameters.
+def back_prop(inputs, true_labels, output_nodes, hidden_nodes, weights1, biases1, weights_out, biases_out, learning_rate=0.1):
+    batch_size = len(true_labels)
+    one_hot = np.zeros_like(output_nodes)
+    one_hot[np.arange(batch_size), true_labels] = 1
     output_error = output_nodes - one_hot
 
     # Propagate output error backward through the output and hidden layers.
-    grad_weights_out = np.outer(hidden_nodes, output_error)
-    grad_biases_out = output_error
+    grad_weights_out = np.dot(hidden_nodes.T, output_error) / batch_size
+    grad_biases_out = np.mean(output_error, axis=0)
 
-    hidden_error_raw = np.dot(weights_out, output_error)
+    hidden_error_raw = np.dot(output_error, weights_out.T)
     sigmoid_deriv = hidden_nodes * (1 - hidden_nodes)
     hidden_error = hidden_error_raw * sigmoid_deriv
 
-    grad_weights1 = np.outer(input, hidden_error)
-    grad_biases1 = hidden_error
+    grad_weights1 = np.dot(inputs.T, hidden_error) / batch_size
+    grad_biases1 = np.mean(hidden_error, axis=0)
 
     weights_out = weights_out - learning_rate * grad_weights_out
     biases_out = biases_out - learning_rate * grad_biases_out
@@ -69,31 +71,37 @@ class Model:
         self.biasesOut = np.zeros(10)
 
     # Train on the requested training subset and optionally report test metrics.
-    def train(self, epochs, status_update, training_size=None, testing_size=None, metrics_update=None):
+    def train(self, epochs, status_update, training_size=None, testing_size=None, metrics_update=None, batch_size=32):
         training_size = len(self.X_train) if training_size is None else training_size
         testing_size = len(self.X_test) if testing_size is None else testing_size
         if not 1 <= training_size <= len(self.X_train):
             raise ValueError(f"Training image count must be between 1 and {len(self.X_train)}.")
         if not 1 <= testing_size <= len(self.X_test):
             raise ValueError(f"Testing image count must be between 1 and {len(self.X_test)}.")
+        if not 1 <= batch_size <= len(self.X_train):
+            raise ValueError(f"Batch size must be between 1 and {len(self.X_train)}.")
 
         status_update("Starting training")
         for epoch in range(epochs):
             # Track loss and elapsed time for this full pass through the subset.
             start = time.time()
             total_loss = 0
-            for i in range(training_size):
-                input_image = self.X_train[i]
-                true_label = int(self.y_train[i])
+            # Shuffle the selected training images so batches vary in order each epoch.
+            shuffled_indices = np.random.permutation(training_size)
+            for start_index in range(0, training_size, batch_size):
+                batch_indices = shuffled_indices[start_index:start_index + batch_size]
+                input_images = self.X_train[batch_indices]
+                true_labels = self.y_train[batch_indices].astype(int)
 
-                # Make a prediction, measure its loss, then update parameters.
-                hidden_nodes = sigmoid(np.dot(input_image, self.weights1) + self.biases1)
+                # Make batch predictions and measure the average loss before updating.
+                hidden_nodes = sigmoid(np.dot(input_images, self.weights1) + self.biases1)
                 output_nodes = softmax(np.dot(hidden_nodes, self.weightsOut) + self.biasesOut)
 
-                total_loss += cross_entropy_loss(output_nodes, true_label)
+                batch_loss = cross_entropy_loss(output_nodes, true_labels)
+                total_loss += batch_loss * len(batch_indices)
 
                 self.weights1, self.biases1, self.weightsOut, self.biasesOut = back_prop(
-                    input_image, true_label, output_nodes, hidden_nodes,
+                    input_images, true_labels, output_nodes, hidden_nodes,
                     self.weights1, self.biases1, self.weightsOut, self.biasesOut
                 )
 
