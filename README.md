@@ -6,7 +6,9 @@ A neural network that can guess handwritten digits. Built from scratch using onl
 
 - **Architecture:** 784 → 128 → 10 (sigmoid hidden layer, softmax output)
 - **Forward pass:** input pixels → weighted sum + bias → sigmoid → weighted sum + bias → softmax
-- **Loss:** cross-entropy
+- **Loss:** cross-entropy with L2 regularization on the weight matrices (biases are not regularized). The objective adds
+  `lambda / 2 * (sum(weights1**2) + sum(weightsOut**2))` to the cross-entropy loss. The default `lambda` is `0.0001`;
+  it is defined in `main.py` and used both in the loss and in the weight gradients.
 - **Learning:** backpropagation with mini-batch gradient descent
   (32 images per update by default; batch size is configurable in the interface)
 
@@ -26,8 +28,23 @@ mini-batch finishes.
 
 ## Results
 
-- Test accuracy: **97.78%** on 10,000 MNIST test images
-- Accuracy peaked around epoch 40, and after that it overfit
+- Test accuracy: **97.89%** on 10,000 MNIST test images
+- Accuracy peaked around epoch 40
+
+### L2 regularization experiments
+
+At 50 epochs with the other settings unchanged, these results were observed:
+
+| L2 lambda | Test accuracy | Reported loss |
+|---:|---:|---:|
+| 0.01 | 88.9% | 0.9892 |
+| 0.001 | 95.3% | 0.3546 |
+| 0.0001 | 97.8% | 0.1075 |
+| 0.00001 | 97.9% | 0.0367 |
+| 0.000001 | 97.9% | 0.0267 |
+
+The reported loss includes the L2 penalty, so loss values from different lambda settings are not directly comparable.
+These are individual runs; results can vary between runs.
 
 ## Setup
 
@@ -44,6 +61,5 @@ The MNIST dataset is downloaded automatically on first run via scikit-learn.
 
 ## Possible improvements
 
-- L2 regularization / early stopping to reduce overfitting
 - ReLU activation
 - Testing with own handwritten digits

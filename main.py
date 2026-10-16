@@ -5,6 +5,7 @@ from sklearn.datasets import fetch_openml
 
 import interface as inf
 
+l2_lambda = 0.0001
 
 # Convert weighted sums into values between zero and one for hidden neurons.
 def sigmoid(x):
@@ -18,10 +19,17 @@ def softmax(x):
 
 
 # Measure the average penalty for assigning low probabilities to correct digits.
-def cross_entropy_loss(predicted, true_labels):
+def cross_entropy_loss(predicted, true_labels, weights):
     predicted_clipped = np.clip(predicted, 1e-12, 1 - 1e-12)
     batch_indices = np.arange(len(true_labels))
-    return np.mean(-np.log(predicted_clipped[batch_indices, true_labels]))
+
+    #Cross entropy loss
+    ce = np.mean(-np.log(predicted_clipped[batch_indices, true_labels]))
+
+    #L2 Regulation penalty: sum of squared weights across all layers
+    l2 = l2_lambda / 2 * sum(np.sum(w**2) for w in weights)
+
+    return ce + l2
 
 
 # Average a batch's gradients and apply one update to the network parameters.
@@ -41,6 +49,9 @@ def back_prop(inputs, true_labels, output_nodes, hidden_nodes, weights1, biases1
 
     grad_weights1 = np.dot(inputs.T, hidden_error) / batch_size
     grad_biases1 = np.mean(hidden_error, axis=0)
+
+    grad_weights_out += l2_lambda * weights_out
+    grad_weights1 += l2_lambda * weights1
 
     weights_out = weights_out - learning_rate * grad_weights_out
     biases_out = biases_out - learning_rate * grad_biases_out
@@ -110,7 +121,7 @@ class Model:
                 hidden_nodes = sigmoid(np.dot(input_images, self.weights1) + self.biases1)
                 output_nodes = softmax(np.dot(hidden_nodes, self.weightsOut) + self.biasesOut)
 
-                batch_loss = cross_entropy_loss(output_nodes, true_labels)
+                batch_loss = cross_entropy_loss(output_nodes, true_labels, weights = [self.weights1, self.weightsOut])
                 total_loss += batch_loss * len(batch_indices)
 
                 self.weights1, self.biases1, self.weightsOut, self.biasesOut = back_prop(
